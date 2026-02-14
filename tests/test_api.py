@@ -9,7 +9,7 @@ from aigent.api.app import create_app
 @pytest.fixture
 def app():
     with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test", "TAVILY_API_KEY": "tvly-test"}):
-        return create_app()
+        yield create_app()
 
 
 @pytest_asyncio.fixture
