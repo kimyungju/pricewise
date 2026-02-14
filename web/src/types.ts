@@ -1,7 +1,6 @@
 export type MessageRole = "user" | "assistant";
 
 export interface ToolCall {
-  id: string;
   name: string;
   args: Record<string, unknown>;
 }
