@@ -17,8 +17,12 @@ def _get_tavily():
 @tool(args_schema=ProductQuery)
 def search_product(query: str, max_results: int = 3) -> str:
     """Search for a product online using Tavily and return formatted results."""
-    results = _get_tavily().invoke({"query": query, "max_results": max_results})
+    response = _get_tavily().invoke(query)
 
+    if "error" in response:
+        return f"Search error: {response['error']}"
+
+    results = response.get("results", [])
     if not results:
         return "No products found for this query."
 
