@@ -1,4 +1,4 @@
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 
 
 def create_summarization_hook(model, max_messages: int = 5):
@@ -14,9 +14,22 @@ def create_summarization_hook(model, max_messages: int = 5):
         if len(messages) <= max_messages:
             return {"llm_input_messages": messages}
 
-        # Split: older messages to summarize, recent to keep
-        messages_to_summarize = messages[:-2]
-        recent_messages = messages[-2:]
+        # Find a safe split point that doesn't break tool_call/response pairs.
+        # Walk backwards from the target split to avoid cutting between an
+        # AIMessage with tool_calls and its corresponding ToolMessages.
+        split = len(messages) - 2
+        while split > 0 and isinstance(messages[split], ToolMessage):
+            split -= 1
+        if split > 0 and isinstance(messages[split], AIMessage) and getattr(messages[split], "tool_calls", None):
+            split -= 1
+            while split > 0 and isinstance(messages[split], ToolMessage):
+                split -= 1
+
+        if split <= 0:
+            return {"llm_input_messages": messages}
+
+        messages_to_summarize = messages[:split]
+        recent_messages = messages[split:]
 
         # Build summarization prompt
         summary_prompt = [
