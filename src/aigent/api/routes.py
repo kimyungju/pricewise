@@ -170,18 +170,14 @@ async def approve_tool(session_id: str, body: ApprovalRequest, request: Request)
     agent = request.app.state.agent
     config = {"configurable": {"thread_id": session["thread_id"]}}
 
-    if not body.approved:
-        async def denied_stream():
-            yield format_sse_event("error", {"message": "Tool execution denied by user"})
-            yield format_sse_event("done", {})
-
-        return StreamingResponse(
-            denied_stream(),
-            media_type="text/event-stream",
-        )
-
-    # Resume with Command(resume=True) for per-tool interrupt() pattern
+    # Resume with Command(resume=approved) for both approval and denial.
+    # On denial, ToolExecutionDenied is raised → LangGraph converts it to an
+    # error ToolMessage → the LLM acknowledges the denial gracefully in the stream.
     return StreamingResponse(
-        _stream_agent(agent, config, Command(resume=True), session_id=session_id),
+        _stream_agent(
+            agent, config,
+            Command(resume=body.approved),
+            session_id=session_id,
+        ),
         media_type="text/event-stream",
     )
