@@ -62,6 +62,9 @@ async def _stream_agent(agent, config, input_value, session_id: str = "default")
         ):
             if mode == "messages":
                 message, _metadata = payload
+                # Skip structured Receipt JSON — it arrives via "receipt" event
+                if _metadata.get("langgraph_node") == "generate_structured_response":
+                    continue
                 if isinstance(message, AIMessageChunk):
                     if message.content:
                         yield format_sse_event("token", {"content": message.content})

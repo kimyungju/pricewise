@@ -13,15 +13,6 @@ interface Props {
   onDeny?: () => void;
 }
 
-function cleanContent(content: string, hasReceipt: boolean): string {
-  if (!content) return "";
-  if (!hasReceipt) return content;
-  const jsonStart = content.indexOf('{"');
-  if (jsonStart === -1) return content;
-  const cleaned = content.substring(0, jsonStart).trim();
-  return cleaned;
-}
-
 export function ChatMessage({
   message,
   staggerIndex = 0,
@@ -29,7 +20,7 @@ export function ChatMessage({
   onDeny,
 }: Props) {
   const isUser = message.role === "user";
-  const displayContent = cleanContent(message.content, !!message.receipt);
+  const displayContent = message.content;
 
   return (
     <div
