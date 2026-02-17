@@ -3,20 +3,21 @@ import pytest_asyncio
 import os
 from unittest.mock import patch
 from httpx import AsyncClient, ASGITransport
-from pricewise.api.app import create_app
-
-
-@pytest.fixture
-def app():
-    with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test", "TAVILY_API_KEY": "tvly-test"}):
-        yield create_app()
+from pricewise.api.app import create_app, lifespan
 
 
 @pytest_asyncio.fixture
-async def client(app):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
+async def client():
+    with patch.dict(os.environ, {
+        "OPENAI_API_KEY": "sk-test",
+        "TAVILY_API_KEY": "tvly-test",
+        "USE_MEMORY_SAVER": "true",
+    }):
+        app = create_app()
+        async with lifespan(app):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as c:
+                yield c
 
 
 @pytest.mark.asyncio

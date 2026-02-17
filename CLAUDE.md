@@ -59,6 +59,9 @@ Uses `src/` layout: package is `src/pricewise/`.
 
 Requires `.env` file with `OPENAI_API_KEY` and `TAVILY_API_KEY`. See `.env.example`.
 
+- `CHECKPOINT_POSTGRES_URI` — PostgreSQL connection string (required unless `USE_MEMORY_SAVER=true`)
+- `USE_MEMORY_SAVER` — Set to `true` to use InMemorySaver instead of Postgres (default: `false`)
+
 ## Design Docs
 
 Implementation plan and design rationale in `docs/plans/`.

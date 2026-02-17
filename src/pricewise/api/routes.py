@@ -19,12 +19,24 @@ class ApprovalRequest(BaseModel):
     approved: bool
 
 
-def _get_session(request: Request, session_id: str) -> dict:
+async def _get_session(request: Request, session_id: str) -> dict:
     """Look up a session or raise 404."""
     sessions = request.app.state.sessions
-    if session_id not in sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return sessions[session_id]
+    if session_id in sessions:
+        return sessions[session_id]
+
+    # Check if the checkpointer has persisted state for this thread
+    agent = request.app.state.agent
+    config = {"configurable": {"thread_id": session_id}}
+    try:
+        state = await agent.aget_state(config)
+        if state and state.values and state.values.get("messages"):
+            sessions[session_id] = {"thread_id": session_id}
+            return sessions[session_id]
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=404, detail="Session not found")
 
 
 async def _stream_agent(agent, config, input_value, session_id: str = "default"):
@@ -125,7 +137,7 @@ async def create_session(request: Request):
 @router.get("/sessions/{session_id}/messages")
 async def get_messages(session_id: str, request: Request):
     """Return the conversation history for a session (used to rehydrate after refresh)."""
-    session = _get_session(request, session_id)
+    session = await _get_session(request, session_id)
     agent = request.app.state.agent
     config = {"configurable": {"thread_id": session["thread_id"]}}
 
@@ -154,7 +166,7 @@ async def get_messages(session_id: str, request: Request):
 @router.post("/sessions/{session_id}/messages")
 async def send_message(session_id: str, body: MessageRequest, request: Request):
     """Send a user message and stream the agent's response via SSE."""
-    session = _get_session(request, session_id)
+    session = await _get_session(request, session_id)
     agent = request.app.state.agent
     config = {"configurable": {"thread_id": session["thread_id"]}}
 
@@ -171,7 +183,7 @@ async def send_message(session_id: str, body: MessageRequest, request: Request):
 @router.post("/sessions/{session_id}/approve")
 async def approve_tool(session_id: str, body: ApprovalRequest, request: Request):
     """Approve or deny pending tool calls, then stream the rest of the response."""
-    session = _get_session(request, session_id)
+    session = await _get_session(request, session_id)
     agent = request.app.state.agent
     config = {"configurable": {"thread_id": session["thread_id"]}}
 
