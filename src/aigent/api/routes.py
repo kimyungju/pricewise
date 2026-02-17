@@ -72,6 +72,7 @@ async def _stream_agent(agent, config, input_value, session_id: str = "default")
             # Agent is interrupted — either from interrupt_before or per-tool interrupt().
             # With per-tool interrupt(), the interrupt data is in state.tasks.
             tool_calls = []
+            interrupt_ids = []
             for task in state.tasks:
                 if hasattr(task, "interrupts") and task.interrupts:
                     for intr in task.interrupts:
@@ -80,6 +81,7 @@ async def _stream_agent(agent, config, input_value, session_id: str = "default")
                                 "name": intr.value["tool"],
                                 "args": intr.value.get("args", {}),
                             })
+                            interrupt_ids.append(intr.id)
 
             # Fallback: read tool_calls from the last AI message
             if not tool_calls:
@@ -91,7 +93,10 @@ async def _stream_agent(agent, config, input_value, session_id: str = "default")
                     ]
 
             if tool_calls:
-                yield format_sse_event("approval_required", {"tool_calls": tool_calls})
+                yield format_sse_event("approval_required", {
+                    "tool_calls": tool_calls,
+                    "interrupt_ids": interrupt_ids,
+                })
         else:
             # Check for structured Receipt
             structured = state.values.get("structured_response")
@@ -170,13 +175,24 @@ async def approve_tool(session_id: str, body: ApprovalRequest, request: Request)
     agent = request.app.state.agent
     config = {"configurable": {"thread_id": session["thread_id"]}}
 
-    # Resume with Command(resume=approved) for both approval and denial.
-    # On denial, ToolExecutionDenied is raised → LangGraph converts it to an
-    # error ToolMessage → the LLM acknowledges the denial gracefully in the stream.
+    # Build resume value. Multiple interrupts require a dict of {id: value}.
+    state = await agent.aget_state(config)
+    interrupt_ids = [
+        intr.id
+        for task in state.tasks
+        if hasattr(task, "interrupts") and task.interrupts
+        for intr in task.interrupts
+    ]
+
+    if len(interrupt_ids) > 1:
+        resume_value = {iid: body.approved for iid in interrupt_ids}
+    else:
+        resume_value = body.approved
+
     return StreamingResponse(
         _stream_agent(
             agent, config,
-            Command(resume=body.approved),
+            Command(resume=resume_value),
             session_id=session_id,
         ),
         media_type="text/event-stream",
