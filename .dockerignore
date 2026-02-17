@@ -1,5 +1,6 @@
 .git
 .venv
+.python-version
 __pycache__
 *.pyc
 .env
