@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -9,25 +10,35 @@ from langgraph.checkpoint.memory import InMemorySaver
 from pricewise.agent import build_agent
 from pricewise.api.routes import router
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     use_memory = os.getenv("USE_MEMORY_SAVER", "false").lower() == "true"
 
-    if use_memory:
-        checkpointer = InMemorySaver()
-        app.state.agent = build_agent(checkpointer=checkpointer)
-        app.state.sessions = {}
-        yield
-    else:
-        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
-        conn_string = os.environ["CHECKPOINT_POSTGRES_URI"]
-        async with AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
-            await checkpointer.setup()
+    try:
+        if use_memory:
+            logger.info("Starting with InMemorySaver")
+            checkpointer = InMemorySaver()
             app.state.agent = build_agent(checkpointer=checkpointer)
             app.state.sessions = {}
+            logger.info("Agent ready (in-memory)")
             yield
+        else:
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+            conn_string = os.environ["CHECKPOINT_POSTGRES_URI"]
+            logger.info("Connecting to Postgres...")
+            async with AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
+                await checkpointer.setup()
+                app.state.agent = build_agent(checkpointer=checkpointer)
+                app.state.sessions = {}
+                logger.info("Agent ready (postgres)")
+                yield
+    except Exception:
+        logger.exception("Failed during startup")
+        raise
 
 
 def create_app() -> FastAPI:
