@@ -12,5 +12,3 @@ wheels/
 # Environment
 .env
 
-# Lock file
-uv.lock
