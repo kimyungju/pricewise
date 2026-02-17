@@ -25,43 +25,32 @@ This project exists as both a functional product and an engineering demonstratio
 ### System Overview
 
 ```
-                        ┌────────────────────────┐
-                        │     Next.js 16 + R19    │
-                        │    (Chat UI, SSE Read)  │
-                        └───────────┬────────────┘
-                                    │
-                    fetch /api/chat/*│  SSE stream
-                    (proxied)       │  (token, tool_call,
-                                    │   approval_required,
-                                    │   receipt, done)
-                                    v
-                        ┌────────────────────────┐
-                        │      FastAPI + SSE      │
-                        │   (Session Manager,     │
-                        │    Stream Generator)    │
-                        └───────────┬────────────┘
-                                    │
-                       astream()    │  Command(resume=...)
-                       stream_mode= │
-                       [messages,   │
-                        updates]    │
-                                    v
+     Vercel                                Railway
+┌─────────────────┐              ┌─────────────────────────┐
+│  Next.js 16     │   fetch()    │     FastAPI + SSE        │
+│  + React 19     │─────────────>│  (Session Manager,       │
+│  (Chat UI,      │   SSE stream │   Stream Generator)      │
+│   SSE Read)     │<─────────────│                          │
+└─────────────────┘              └────────────┬────────────┘
+  NEXT_PUBLIC_API_URL              CORS: ALLOWED_ORIGINS
+  points to Railway                astream() │ Command(resume=...)
+                                             v
 ┌──────────────┐    ┌──────────────────────────────────┐    ┌──────────────┐
 │ Summarization│───>│        LangGraph ReAct Agent      │<──>│  OpenAI      │
 │ pre_model    │    │                                    │    │  gpt-4o      │
 │ _hook        │    │  interrupt() ──> approve ──> resume│    └──────────────┘
 └──────────────┘    └──────────┬──────────┬─────────────┘
-                               │          │
-                    ┌──────────┘          └──────────┐
-                    v                                v
-          ┌──────────────────┐            ┌──────────────────┐
-          │  Tavily Tools    │            │  Local Tools      │
-          │  (search, compare│            │  (budget calc,    │
-          │   reviews, scrape│            │   wishlist)       │
-          │   coupons, avail,│            │   auto-execute    │
-          │   delegation)    │            │                   │
-          │  with_approval() │            │                   │
-          └──────────────────┘            └──────────────────┘
+                               │          │         │
+                    ┌──────────┘          │         └──────────┐
+                    v                     v                    v
+          ┌──────────────────┐  ┌──────────────────┐  ┌──────────────┐
+          │  Tavily Tools    │  │  Local Tools      │  │  PostgreSQL  │
+          │  (search, compare│  │  (budget calc,    │  │  (checkpoint │
+          │   reviews, scrape│  │   wishlist)       │  │   persistence│
+          │   coupons, avail,│  │   auto-execute    │  │   via Async  │
+          │   delegation)    │  │                   │  │   PostgresSvr│
+          │  with_approval() │  │                   │  │   )          │
+          └──────────────────┘  └──────────────────┘  └──────────────┘
 ```
 
 ### Streaming & State Flow
@@ -102,9 +91,10 @@ Sessions are keyed by UUID and backed by a configurable checkpointer — `AsyncP
 | **FastAPI + SSE** | HTTP API & streaming | Native async, Pydantic integration for request validation, and `sse-starlette` for streaming without WebSocket complexity | SSE is unidirectional — approval responses require a separate POST endpoint rather than a bidirectional channel |
 | **OpenAI gpt-4o** | LLM backbone | Strong tool-calling accuracy and structured output compliance via `response_format`. `init_chat_model` provides a provider-agnostic interface for future swaps | Per-token cost; vendor dependency on OpenAI's tool-calling format |
 | **Tavily** | Web search API | Purpose-built for LLM applications — returns clean, parsed content rather than raw HTML. Shared client factory (`get_tavily`) centralizes configuration | Smaller ecosystem than SerpAPI or Google Custom Search; rate limits require defensive error handling |
-| **Next.js 16 + React 19** | Frontend | App Router for server/client boundaries, `fetch` with `AbortController` for SSE lifecycle management | Full framework for what is currently a single-page chat UI — justified by session rehydration and planned feature expansion |
+| **Next.js 16 + React 19** | Frontend (Vercel) | App Router for server/client boundaries, `fetch` with `AbortController` for SSE lifecycle management. Deployed to Vercel with `NEXT_PUBLIC_API_URL` pointing to Railway | Vercel serverless functions have a 10s timeout — SSE streams bypass this by calling Railway directly from the browser |
 | **Pydantic v2** | Schema validation | Dual-use as both tool input schemas (LLM argument validation) and structured output format (`response_format=Receipt`). Single source of truth for data contracts | Schema changes require coordination between agent output and frontend rendering |
 | **PostgreSQL + AsyncPostgresSaver** | Persistent checkpointing | LangGraph-native checkpoint backend with async connection pooling. Managed via FastAPI `lifespan` context — auto-creates tables on first run, cleans up on shutdown | Requires a running Postgres instance; `InMemorySaver` fallback simplifies local dev |
+| **Docker + Railway** | Backend deployment | Dockerfile with multi-stage `uv` install for fast, reproducible builds. Railway provides managed Postgres, health checks, and auto-restart. `ALLOWED_ORIGINS` env var configures CORS per environment | Railway's free tier has resource limits; SSE anti-buffering headers (`X-Accel-Buffering: no`) required to prevent proxy buffering |
 
 ## 4. Technical Challenges & Solutions
 
@@ -229,6 +219,7 @@ Each thread gets its own call stack and runs the synchronous Tavily client indep
 - Persistent checkpointing via `AsyncPostgresSaver` — conversations survive server restarts and rehydrate automatically. `InMemorySaver` fallback for local dev and tests via `USE_MEMORY_SAVER` env var
 - Multi-product delegation tool that fans out parallel Tavily searches across product categories via `ThreadPoolExecutor`, with budget tracking and result synthesis
 - Twelve test modules covering schemas, tools (including new tools), middleware, streaming format, and API integration with zero live API calls
+- Production-ready deployment: Dockerfile with `uv`, Railway config with health checks and restart policies, configurable CORS, and SSE anti-buffering headers
 
 ### Scalability Considerations
 
@@ -237,8 +228,13 @@ Each thread gets its own call stack and runs the synchronous Tavily client indep
 - The multi-product delegation tool parallelizes Tavily searches via `ThreadPoolExecutor` with a configurable worker cap. This avoids async event loop conflicts (Tavily's client is synchronous) while achieving concurrent I/O
 - SSE streaming is unidirectional by design. Adding real-time features (collaborative sessions, push notifications) would require upgrading to WebSockets, though the existing event format could be preserved
 
+### Deployment Architecture
+
+The frontend (Next.js) deploys to Vercel, and the backend (FastAPI + PostgreSQL) deploys to Railway. In local development, Next.js rewrites proxy `/api/*` to `localhost:8000`. In production, the frontend calls Railway directly via `NEXT_PUBLIC_API_URL`, bypassing Vercel's 10-second serverless timeout. CORS origins are configured per environment via `ALLOWED_ORIGINS`. The Dockerfile uses `uv` for fast, reproducible dependency installation, and Railway's health check endpoint (`/health`) enables automatic restart on failure.
+
 ### Planned Features
 
-- **Production deployment** — Docker containerization, CI/CD pipeline with automated testing, and cloud deployment with monitoring and structured logging
+- **CI/CD pipeline** — Automated testing on push, deployment gating on test pass
+- **Structured logging** — JSON-formatted logs for Railway's log viewer with session-scoped context
 
 The architecture is designed for this kind of extension. Each layer — LLM, tools, middleware, API, frontend — can evolve independently. Adding a tool requires a function, a Pydantic schema, and a one-line addition to the agent's tool list. Swapping LLM providers requires changing a single `init_chat_model` call. The complexity lives in the orchestration boundaries, not in the individual components.
