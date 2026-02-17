@@ -45,9 +45,10 @@ def create_app() -> FastAPI:
     load_dotenv()
     app = FastAPI(title="Pricewise API", lifespan=lifespan)
 
-    allowed_origins = os.getenv(
-        "ALLOWED_ORIGINS", "http://localhost:3000"
-    ).split(",")
+    allowed_origins = [
+        o.strip()
+        for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    ]
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
