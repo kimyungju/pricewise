@@ -261,7 +261,6 @@ export function useChatStream() {
           return;
         }
         setStatus("error");
-        throw err;
       }
     },
     [sessionId, createSession]
@@ -318,7 +317,6 @@ export function useChatStream() {
           return;
         }
         setStatus("error");
-        throw err;
       }
     },
     [sessionId]
