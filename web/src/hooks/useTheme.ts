@@ -18,20 +18,19 @@ function getStoredTheme(): Theme | null {
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
-    return getStoredTheme() || getSystemTheme();
+    return getStoredTheme() || "light";
   });
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  // Listen for system theme changes
+  // Listen for system theme changes (only if user hasn't set a preference)
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = (e: MediaQueryListEvent) => {
-      if (!getStoredTheme()) {
-        setThemeState(e.matches ? "dark" : "light");
-      }
+      if (getStoredTheme()) return;
+      setThemeState(e.matches ? "dark" : "light");
     };
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
