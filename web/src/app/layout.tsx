@@ -2,8 +2,28 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Pricewise",
-  description: "AI-powered product search with human-in-the-loop approval",
+  metadataBase: new URL("https://pricewise-ai-shop.vercel.app"),
+  title: {
+    default: "Pricewise — AI Shopping Agent",
+    template: "%s | Pricewise",
+  },
+  description:
+    "AI-powered product search and price comparison with selective human-in-the-loop approval. Built with LangGraph, OpenAI, and FastAPI.",
+  openGraph: {
+    title: "Pricewise — AI Shopping Agent",
+    description:
+      "AI-powered product search and price comparison with selective human-in-the-loop approval.",
+    url: "https://pricewise-ai-shop.vercel.app",
+    siteName: "Pricewise",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pricewise — AI Shopping Agent",
+    description:
+      "AI-powered product search and price comparison with selective human-in-the-loop approval.",
+  },
 };
 
 export default function RootLayout({
