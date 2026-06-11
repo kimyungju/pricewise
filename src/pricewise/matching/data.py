@@ -108,9 +108,25 @@ CATALOG: list[dict] = [
     for pid, brand, name, aliases, family, category in _P
 ]
 
+_ACCESSORY_TEMPLATES = [
+    "Silicone Case for {p}",
+    "Carrying Case for {p} with Keychain",
+    "Screen Protector for {p} (2-Pack)",
+    "Tempered Glass for {p}",
+    "{p} Charging Cable 2m",
+    "Replacement Band Compatible with {p}",
+    "Stand Holder for {p}",
+    "{p} Compatible Charger 30W",
+    "Protective Cover for {p}",
+]
+
 _PREFIXES = ["", "", "", "NEW ", "2026 ", "Official ", "Genuine "]
 _SUFFIXES = ["", "", " - Free Shipping", " | In Stock", " (Latest Model)",
              " - Fast Delivery", " | Authorized Dealer", ", Sealed"]
+# Real listing content carries prices; train on them so neither the
+# embeddings nor the numeric features treat a price as a variant signal.
+_PRICES = ["", "", "", " - $89", " - $129.99", " - $249", " - $399.00",
+           " - $549", " - $1,299", " for $59.99"]
 _RETAILERS = ["", "", " at Amazon", " - Best Buy", " | Walmart.com",
               " - Target", " | Shopee", " at Lazada"]
 
@@ -120,7 +136,10 @@ def render_title(product: dict, rng: random.Random) -> str:
     alias = rng.choice(product["aliases"])
     if rng.random() < 0.5 and not alias.lower().startswith(product["brand"].lower()):
         alias = f"{product['brand']} {alias}"
-    title = f"{rng.choice(_PREFIXES)}{alias}{rng.choice(_SUFFIXES)}{rng.choice(_RETAILERS)}"
+    title = (
+        f"{rng.choice(_PREFIXES)}{alias}{rng.choice(_PRICES)}"
+        f"{rng.choice(_SUFFIXES)}{rng.choice(_RETAILERS)}"
+    )
     if rng.random() < 0.1:
         title = title.upper()
     return title.strip()
@@ -139,7 +158,9 @@ def _hard_negative_pool(catalog: list[dict]) -> list[tuple[dict, dict]]:
 
 
 def generate_pairs(catalog: list[dict], n_pairs: int, seed: int) -> list[dict]:
-    """Balanced labelled pairs: ~50% positive, negatives split hard/easy."""
+    """Balanced labelled pairs: ~50% positive; negatives mix hard
+    (same-family variant), accessory (accessory FOR the product — full
+    name overlap, identical numbers), and easy (unrelated product)."""
     rng = random.Random(seed)
     hard_pool = _hard_negative_pool(catalog)
     pairs: list[dict] = []
@@ -156,12 +177,26 @@ def generate_pairs(catalog: list[dict], n_pairs: int, seed: int) -> list[dict]:
                 "text_a": text_a, "text_b": text_b, "label": 1,
                 "product_a": p["id"], "product_b": p["id"], "kind": "positive",
             })
-        elif i % 4 == 1 and hard_pool:  # hard negative: same family
+            continue
+
+        kind = (i // 2) % 4
+        if kind == 0 and hard_pool:  # hard negative: same family
             a, b = rng.choice(hard_pool)
             pairs.append({
                 "text_a": render_title(a, rng), "text_b": render_title(b, rng),
                 "label": 0, "product_a": a["id"], "product_b": b["id"],
                 "kind": "hard_negative",
+            })
+        elif kind == 1:  # accessory negative: accessory of the SAME product
+            p = rng.choice(catalog)
+            accessory = rng.choice(_ACCESSORY_TEMPLATES).format(
+                p=rng.choice(p["aliases"])
+            )
+            pairs.append({
+                "text_a": render_title(p, rng), "text_b": accessory,
+                "label": 0, "product_a": p["id"],
+                "product_b": f"{p['id']}::accessory",
+                "kind": "accessory_negative",
             })
         else:  # easy negative: any two distinct products
             a, b = rng.sample(catalog, 2)

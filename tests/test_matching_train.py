@@ -55,6 +55,23 @@ class TestTrainHead:
         for row in history:
             assert "train_loss" in row and "val_loss" in row and "val_auc" in row
 
+    def test_extra_features_are_learned_when_provided(self):
+        """Embeddings identical for every pair; labels depend ONLY on the
+        extra features — the head must learn from them."""
+        g = torch.Generator().manual_seed(5)
+        n, dim = 128, 8
+        e = torch.randn(n, dim, generator=g)
+        y = torch.cat([torch.ones(n // 2), torch.zeros(n // 2)])
+        extra = torch.cat([torch.ones(n // 2, 3), torch.zeros(n // 2, 3)])
+        data = (e, e.clone(), y, extra)
+
+        head, _ = train_head(
+            data, data, embed_dim=dim, hidden_dim=8,
+            epochs=15, lr=0.02, batch_size=32, seed=0, extra_dim=3,
+        )
+        metrics = evaluate(head, data)
+        assert metrics["accuracy"] >= 0.95
+
     def test_evaluate_returns_bounded_metrics(self):
         data = _separable_dataset(64, 16, seed=4)
         head, _ = train_head(

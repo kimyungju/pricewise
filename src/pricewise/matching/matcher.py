@@ -13,6 +13,7 @@ from pathlib import Path
 
 import torch
 
+from pricewise.matching.features import EXTRA_DIM
 from pricewise.matching.model import MatchHead
 from pricewise.matching.train import EMBED_DIM, ENCODER_MODEL, WEIGHTS_PATH
 
@@ -30,11 +31,13 @@ class ProductMatcher:
         weights_path: Path = WEIGHTS_PATH,
         embed_dim: int = EMBED_DIM,
         hidden_dim: int = 256,
+        extra_dim: int = EXTRA_DIM,
     ) -> None:
         self._head = head
         self._weights_path = Path(weights_path)
         self._embed_dim = embed_dim
         self._hidden_dim = hidden_dim
+        self._extra_dim = extra_dim
         self._encoder = None
 
     def _get_head(self) -> MatchHead:
@@ -44,7 +47,11 @@ class ProductMatcher:
                     f"no trained weights at {self._weights_path}; "
                     "run `python -m pricewise.matching.train` first"
                 )
-            head = MatchHead(embed_dim=self._embed_dim, hidden_dim=self._hidden_dim)
+            head = MatchHead(
+                embed_dim=self._embed_dim,
+                hidden_dim=self._hidden_dim,
+                extra_dim=self._extra_dim,
+            )
             head.load_state_dict(
                 torch.load(self._weights_path, map_location="cpu", weights_only=True)
             )
@@ -71,8 +78,17 @@ class ProductMatcher:
         embeddings = self._embed([query, *candidates])
         query_emb = embeddings[0].unsqueeze(0).expand(len(candidates), -1)
         cand_emb = embeddings[1:]
+
+        extra = None
+        if getattr(head, "extra_dim", 0):
+            from pricewise.matching.features import pair_features
+
+            extra = torch.tensor(
+                [pair_features(query, c) for c in candidates], dtype=torch.float32
+            )
+
         with torch.no_grad():
-            probs = torch.sigmoid(head(query_emb, cand_emb))
+            probs = torch.sigmoid(head(query_emb, cand_emb, extra))
         return [float(p) for p in probs]
 
 

@@ -36,6 +36,18 @@ def test_positive_pairs_are_same_product():
             assert p["product_a"] != p["product_b"]
 
 
+def test_includes_accessory_negatives():
+    """An accessory listing FOR the product ("Case for AirPods Pro 2")
+    contains the full product name and identical numbers — without these
+    negatives the matcher scores accessories as the product itself."""
+    pairs = generate_pairs(CATALOG, n_pairs=400, seed=5)
+    negatives = [p for p in pairs if p["label"] == 0]
+    accessory = [p for p in negatives if p["kind"] == "accessory_negative"]
+    assert len(accessory) >= 0.1 * len(negatives)
+    for p in accessory:
+        assert p["product_b"].endswith("::accessory")
+
+
 def test_positive_titles_differ_in_surface_form():
     pairs = generate_pairs(CATALOG, n_pairs=400, seed=2)
     positives = [p for p in pairs if p["label"] == 1]
@@ -51,6 +63,7 @@ def test_includes_hard_negatives_from_same_family():
     hard = [
         p for p in pairs
         if p["label"] == 0
+        and p["product_b"] in by_product
         and by_product[p["product_a"]]["family"] == by_product[p["product_b"]]["family"]
     ]
     # hard negatives are the point of the dataset — require a real share

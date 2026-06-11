@@ -49,16 +49,35 @@ class TestProductMatcher:
         mock_embed.assert_not_called()
 
     def test_missing_weights_raises_matcher_unavailable(self, tmp_path):
-        matcher = ProductMatcher(weights_path=tmp_path / "nope.pt", embed_dim=8)
+        matcher = ProductMatcher(weights_path=tmp_path / "nope.pt", embed_dim=8, extra_dim=0)
         with pytest.raises(MatcherUnavailable):
             matcher.score("q", ["a"])
+
+    def test_score_passes_pair_features_for_extra_dim_head(self):
+        from unittest.mock import MagicMock
+
+        from pricewise.matching.features import pair_features
+
+        spy = MagicMock()
+        spy.extra_dim = 3
+        spy.return_value = torch.tensor([0.0, 0.0])
+        matcher = ProductMatcher(head=spy, embed_dim=8)
+        with patch.object(matcher, "_embed", return_value=torch.zeros(3, 8)):
+            matcher.score("LG C4 55 inch", ["LG C4 55-inch TV", "LG C4 65-inch TV"])
+
+        extra = spy.call_args[0][2]
+        assert extra.shape == (2, 3)
+        expected_first = pair_features("LG C4 55 inch", "LG C4 55-inch TV")
+        assert extra[0].tolist() == pytest.approx(expected_first)
+        # the 65-inch sibling must show a numeric mismatch
+        assert extra[1][1].item() == 0.0
 
     def test_loads_weights_from_file(self, tmp_path):
         trained = _trained_stub_head()
         path = tmp_path / "head.pt"
         torch.save(trained.state_dict(), path)
 
-        matcher = ProductMatcher(weights_path=path, embed_dim=8, hidden_dim=4)
+        matcher = ProductMatcher(weights_path=path, embed_dim=8, hidden_dim=4, extra_dim=0)
         fixed = {
             "q": torch.ones(8),
             "same": torch.ones(8),

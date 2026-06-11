@@ -19,7 +19,9 @@ def _filter_same_product(product_name: str, results: list) -> tuple[list, bool]:
     if os.getenv("MATCHER_ENABLED", "").lower() != "true":
         return results, False
 
-    threshold = float(os.getenv("MATCH_THRESHOLD", "0.5"))
+    # Observed score bands with the shipped weights: exact matches 0.71+,
+    # sibling variants / accessories 0.58 and below. 0.65 splits the gap.
+    threshold = float(os.getenv("MATCH_THRESHOLD", "0.65"))
     try:
         scores = get_matcher().score(
             product_name, [r.get("content", "") for r in results]

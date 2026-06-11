@@ -44,12 +44,20 @@ def auc_score(scores, labels) -> float | None:
     return wins / (len(pos) * len(neg))
 
 
-def evaluate(head: MatchHead, data: tuple) -> dict:
-    """Accuracy / F1 / AUC of a trained head on (e1, e2, labels) tensors."""
+def _unpack(data: tuple):
+    """(e1, e2, y) or (e1, e2, y, extra) -> e1, e2, y, extra|None."""
+    if len(data) == 4:
+        return data[0], data[1], data[2], data[3]
     e1, e2, y = data
+    return e1, e2, y, None
+
+
+def evaluate(head: MatchHead, data: tuple) -> dict:
+    """Accuracy / F1 / AUC of a trained head on (e1, e2, labels[, extra])."""
+    e1, e2, y, extra = _unpack(data)
     head.eval()
     with torch.no_grad():
-        probs = torch.sigmoid(head(e1, e2))
+        probs = torch.sigmoid(head(e1, e2, extra))
     preds = (probs >= 0.5).float()
 
     tp = float(((preds == 1) & (y == 1)).sum())
@@ -76,14 +84,16 @@ def train_head(
     lr: float = 1e-3,
     batch_size: int = 64,
     seed: int = 0,
+    extra_dim: int = 0,
 ) -> tuple[MatchHead, list[dict]]:
     """Train a MatchHead with BCE loss + Adam; keep the best-val-AUC state."""
     torch.manual_seed(seed)
-    head = MatchHead(embed_dim=embed_dim, hidden_dim=hidden_dim)
+    head = MatchHead(embed_dim=embed_dim, hidden_dim=hidden_dim, extra_dim=extra_dim)
     optimizer = torch.optim.Adam(head.parameters(), lr=lr)
     loss_fn = nn.BCEWithLogitsLoss()
 
-    e1, e2, y = train_data
+    e1, e2, y, extra = _unpack(train_data)
+    val_e1, val_e2, val_y, val_extra = _unpack(val_data)
     n = y.numel()
     history: list[dict] = []
     best_auc, best_state = -1.0, None
@@ -95,7 +105,9 @@ def train_head(
         for start in range(0, n, batch_size):
             idx = perm[start:start + batch_size]
             optimizer.zero_grad()
-            logits = head(e1[idx], e2[idx])
+            logits = head(
+                e1[idx], e2[idx], extra[idx] if extra is not None else None
+            )
             loss = loss_fn(logits, y[idx])
             loss.backward()
             optimizer.step()
@@ -103,10 +115,10 @@ def train_head(
 
         head.eval()
         with torch.no_grad():
-            val_logits = head(val_data[0], val_data[1])
-            val_loss = float(loss_fn(val_logits, val_data[2]))
+            val_logits = head(val_e1, val_e2, val_extra)
+            val_loss = float(loss_fn(val_logits, val_y))
             val_auc = auc_score(
-                torch.sigmoid(val_logits).tolist(), val_data[2].tolist()
+                torch.sigmoid(val_logits).tolist(), val_y.tolist()
             ) or 0.0
 
         history.append({
@@ -125,14 +137,19 @@ def train_head(
 
 
 def _featurize(pairs: list[dict], encoder) -> tuple:
-    """Embed each unique title once, then assemble pair tensors."""
+    """Embed each unique title once, then assemble pair tensors (+ extras)."""
+    from pricewise.matching.features import pair_features
+
     texts = sorted({p["text_a"] for p in pairs} | {p["text_b"] for p in pairs})
     embeddings = encoder.encode(texts, convert_to_tensor=True, show_progress_bar=False)
     index = {t: i for i, t in enumerate(texts)}
     e1 = torch.stack([embeddings[index[p["text_a"]]] for p in pairs])
     e2 = torch.stack([embeddings[index[p["text_b"]]] for p in pairs])
     y = torch.tensor([float(p["label"]) for p in pairs])
-    return e1.float(), e2.float(), y
+    extra = torch.tensor(
+        [pair_features(p["text_a"], p["text_b"]) for p in pairs], dtype=torch.float32
+    )
+    return e1.float(), e2.float(), y, extra
 
 
 def main() -> None:
@@ -152,7 +169,9 @@ def main() -> None:
     val_data = _featurize(val_pairs, encoder)
     test_data = _featurize(test_pairs, encoder)
 
-    head, history = train_head(train_data, val_data)
+    from pricewise.matching.features import EXTRA_DIM
+
+    head, history = train_head(train_data, val_data, extra_dim=EXTRA_DIM)
     for row in history[-3:]:
         print(f"epoch {row['epoch']:3d} train_loss={row['train_loss']:.4f} "
               f"val_loss={row['val_loss']:.4f} val_auc={row['val_auc']:.4f}")

@@ -52,6 +52,26 @@ def test_identical_embeddings_score_higher_than_random_after_one_step():
     assert same_logit > diff_logit
 
 
+def test_extra_features_change_output():
+    """With extra_dim set, handcrafted features must reach the classifier."""
+    torch.manual_seed(0)
+    head = MatchHead(embed_dim=16, hidden_dim=8, extra_dim=3)
+    e1 = torch.randn(2, 16)
+    e2 = torch.randn(2, 16)
+    extra_match = torch.tensor([[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]])
+    extra_clash = torch.tensor([[0.0, 0.0, 0.2], [0.0, 0.0, 0.2]])
+    out_match = head(e1, e2, extra_match)
+    out_clash = head(e1, e2, extra_clash)
+    assert out_match.shape == (2,)
+    assert not torch.allclose(out_match, out_clash)
+
+
+def test_extra_dim_zero_keeps_two_arg_forward():
+    head = MatchHead(embed_dim=16, hidden_dim=8)
+    logits = head(torch.randn(3, 16), torch.randn(3, 16))
+    assert logits.shape == (3,)
+
+
 def test_embed_dim_mismatch_raises():
     head = MatchHead(embed_dim=384)
     e1 = torch.randn(2, 128)
