@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from langchain_core.messages import AIMessageChunk, HumanMessage, AIMessage, ToolMessage
 
 from pricewise.api.streaming import format_sse_event
+from pricewise.observability import agent_config
 from pricewise.tools.wishlist import session_id_var
 
 router = APIRouter()
@@ -177,7 +178,7 @@ async def send_message(session_id: str, body: MessageRequest, request: Request):
     """Send a user message and stream the agent's response via SSE."""
     session = await _get_session(request, session_id)
     agent = request.app.state.agent
-    config = {"configurable": {"thread_id": session["thread_id"]}}
+    config = agent_config(session["thread_id"], session_id=session_id)
 
     return StreamingResponse(
         _stream_agent(
@@ -195,7 +196,7 @@ async def approve_tool(session_id: str, body: ApprovalRequest, request: Request)
     """Approve or deny pending tool calls, then stream the rest of the response."""
     session = await _get_session(request, session_id)
     agent = request.app.state.agent
-    config = {"configurable": {"thread_id": session["thread_id"]}}
+    config = agent_config(session["thread_id"], session_id=session_id)
 
     # Build resume value. Multiple interrupts require a dict of {id: value}.
     state = await agent.aget_state(config)

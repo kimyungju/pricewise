@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      # Unit tests are fully mocked — dummy keys satisfy client constructors.
+      OPENAI_API_KEY: ci-dummy
+      TAVILY_API_KEY: ci-dummy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run unit + safety tests
+        run: uv run python -m pytest tests/ -v
