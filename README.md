@@ -16,6 +16,7 @@ An AI-powered shopping assistant that searches for products, compares prices acr
 - **Web Interface** — Chat-based UI built with Next.js for an accessible, real-time experience
 - **Eval Harness** — 42 golden tasks (including prompt-injection and denial scenarios) with a CI regression gate
 - **Observability** — Optional Langfuse tracing for every LLM call, tool call, latency, and token cost
+- **Product Matching (PyTorch)** — A trained same-product classifier filters price-comparison results so the agent never compares an accessory or a sibling variant against the product you asked for
 
 ## Architecture
 
@@ -49,6 +50,31 @@ The agent is built with LangGraph's `create_react_agent` and orchestrates ten to
 | `get_wishlist` | Retrieves the current wishlist | Auto |
 
 A **pre-model summarization hook** compresses conversation history when it exceeds a configurable threshold. Tools making external API calls require **human-in-the-loop approval**; pure-computation tools auto-execute.
+
+### Product Matching (PyTorch)
+
+`compare_prices` results from web search routinely mix in accessories
+("Silicone Case for AirPods Pro 2"), sibling variants (AirPods Max,
+65-inch instead of 55-inch), and unrelated products. With
+`MATCHER_ENABLED=true`, a trained classifier scores each listing's
+same-product likelihood against the query and drops listings below
+`MATCH_THRESHOLD` (default 0.65):
+
+```
+query ──▶ frozen MiniLM embeddings (e_q, e_c)
+      └─▶ symbolic pair features (numeric variant match, token overlap)
+                    │
+        MatchHead MLP  [e_q ; e_c ; |e_q-e_c| ; e_q*e_c ; features] ─▶ p(same product)
+```
+
+- `src/pricewise/matching/model.py` — the PyTorch `MatchHead` module
+- `src/pricewise/matching/data.py` — synthetic retailer-style title pairs
+  (65-product catalog, family-level splits, accessory + same-family hard
+  negatives, price noise)
+- `src/pricewise/matching/train.py` — training loop (BCE + Adam, best-val
+  checkpointing); retrain with `uv run python -m pricewise.matching.train`
+- Test split (unseen product families): accuracy 0.82, F1 0.83, AUC 0.89
+- CPU-only inference; the encoder and weights lazy-load on first use
 
 ## Tech Stack
 
