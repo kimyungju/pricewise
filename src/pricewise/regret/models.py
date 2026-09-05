@@ -79,7 +79,9 @@ class Candidate(Contract):
     source_url: str = Field(pattern=r"^https?://\S+$")
     price: Decimal | None = Field(default=None, ge=0, allow_inf_nan=False)
     currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
-    price_quote: str = ""
+    price_quote: str | None = Field(
+        default=None, description="Exact price and currency quote, or null if absent."
+    )
     assessments: list[Assessment] = Field(default_factory=list)
 
     @model_validator(mode="after")
