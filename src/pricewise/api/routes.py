@@ -66,8 +66,10 @@ async def _stream_agent(agent, config, input_value, session_id: str = "default")
                 # Skip structured Receipt JSON — it arrives via "receipt" event
                 if _metadata.get("langgraph_node") == "generate_structured_response":
                     continue
+                if _metadata.get("langgraph_node") in {"planner", "assess"}:
+                    continue
                 if isinstance(message, AIMessageChunk):
-                    if message.content:
+                    if message.content and _metadata.get("langgraph_node") != "agent":
                         yield format_sse_event("token", {"content": message.content})
                     if message.tool_calls:
                         for tc in message.tool_calls:
@@ -159,6 +161,8 @@ async def get_messages(session_id: str, request: Request):
         if isinstance(msg, HumanMessage):
             messages.append({"role": "user", "content": msg.content, "id": msg.id})
         elif isinstance(msg, AIMessage):
+            if msg.additional_kwargs.get("pricewise_internal"):
+                continue
             entry = {"role": "assistant", "content": msg.content or "", "id": msg.id}
             if msg.tool_calls:
                 entry["toolCalls"] = [
@@ -170,7 +174,9 @@ async def get_messages(session_id: str, request: Request):
     structured = state.values.get("structured_response")
     receipt = structured.model_dump() if structured else None
 
-    return {"messages": messages, "receipt": receipt}
+    profile = state.values.get("profile")
+    return {"messages": messages, "receipt": receipt,
+            "regret_profile": profile.model_dump(mode="json") if profile else None}
 
 
 @router.post("/sessions/{session_id}/messages")

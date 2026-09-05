@@ -177,7 +177,7 @@ class TestAgentToolWiring:
         """build_agent must wire exactly UNSAFE_TOOLS (wrapped) + SAFE_TOOLS."""
         captured = {}
 
-        def fake_create_react_agent(*, model, tools, **kwargs):
+        def fake_create_regret_agent(*, model, tools, **kwargs):
             captured["tools"] = tools
 
             class _Stub:
@@ -185,11 +185,8 @@ class TestAgentToolWiring:
 
             return _Stub()
 
-        monkeypatch.setattr(agent_module, "create_react_agent", fake_create_react_agent)
+        monkeypatch.setattr(agent_module, "create_regret_agent", fake_create_regret_agent)
         monkeypatch.setattr(agent_module, "init_chat_model", lambda *a, **k: object())
-        monkeypatch.setattr(
-            agent_module, "create_summarization_hook", lambda *a, **k: None
-        )
 
         agent_module.build_agent(checkpointer=object())
 

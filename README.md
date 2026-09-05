@@ -11,8 +11,10 @@ An AI-powered shopping assistant that searches for products, compares prices acr
 - **Review Analysis** — Fetches and summarizes product reviews and ratings
 - **Budget Calculator** — Computes totals with tax and checks against your budget
 - **Human-in-the-Loop** — Every tool call requires your approval before execution, keeping you in control
-- **Structured Output** — Returns a clean receipt with product name, price, rating, price range, and purchase reasoning
-- **Conversation Summarization** — Automatically compresses long conversations to maintain context without hitting token limits
+- **Regret Profile** — Remembers forbidden outcomes, negotiable preferences, important benefits, and budget across turns; answers can move priorities without losing other constraints
+- **Planner / Executor** — Separates structured turn decisions from tool execution and customer-facing questions or recommendations
+- **Grounded Recommendations** — Filters hard constraints and ranks source claims before creating a receipt; asks about observed tradeoffs and marks missing evidence explicitly
+- **Explicit Preference Memory** — Keeps the profile in session checkpoints while using bounded conversational context and a four-batch research budget per turn
 - **Web Interface** — Chat-based UI built with Next.js for an accessible, real-time experience
 - **Eval Harness** — 42 golden tasks (including prompt-injection and denial scenarios) with a CI regression gate
 - **Observability** — Optional Langfuse tracing for every LLM call, tool call, latency, and token cost
@@ -34,7 +36,7 @@ An AI-powered shopping assistant that searches for products, compares prices acr
                                            └──────────┘    └──────────┘    └────────────┘
 ```
 
-The agent is built with LangGraph's `create_react_agent` and orchestrates ten tools:
+The agent uses an explicit LangGraph `StateGraph`: Planner → research Executor → evidence extraction and deterministic ranking → response Executor. It orchestrates ten tools:
 
 | Tool | Description | Approval |
 |------|-------------|----------|
@@ -49,7 +51,11 @@ The agent is built with LangGraph's `create_react_agent` and orchestrates ten to
 | `add_to_wishlist` | Saves a product to the session wishlist | Auto |
 | `get_wishlist` | Retrieves the current wishlist | Auto |
 
-A **pre-model summarization hook** compresses conversation history when it exceeds a configurable threshold. Tools making external API calls require **human-in-the-loop approval**; pure-computation tools auto-execute.
+The **Planner** outputs only an action, a profile patch, and an optional question target. The profile persists outside conversational context. Tools making external API calls require **human-in-the-loop approval**; pure-computation tools auto-execute. Question-only turns return chat text without manufacturing a product receipt. The existing summarization helper remains available but is not used by this graph.
+
+For example, two shoe candidates may trade comfort against sleek design. Pricewise asks which matters more; after the user accepts a chunkier design, that preference becomes negotiable and the comfort-first candidate ranks higher. Hard exclusions and explicit budget ceilings are never silently relaxed. Missing hard-condition evidence blocks a verified recommendation, and a bare `$` does not establish USD pricing.
+
+See [Regretless Buyer implementation](docs/plans/2026-09-05-regretless-buyer-feasibility.md) for the state model, evidence boundaries, and offline validation. Semantic interpretation still depends on the LLM; these rules do not guarantee subjective comfort or establish calibrated regret probabilities.
 
 ### Product Matching (PyTorch)
 
