@@ -45,7 +45,7 @@ def test_regret_profile_supports_priority_moves():
 def test_profile_rejects_changes_without_user_evidence():
     # Given: a hard exclusion already exists.
     item = models.Criterion(
-        key="logo", description="Large logo", level="forbidden", source_quote="no logos"
+        key="logo", description="No large logos", level="forbidden", source_quote="no logos"
     )
     profile = models.RegretProfile(criteria=[item])
     patch = models.ProfilePatch(
@@ -120,7 +120,7 @@ def test_unknown_hard_condition_is_not_treated_as_satisfied():
         criteria=[
             models.Criterion(
                 key="logo",
-                description="Large logo",
+                description="No large logos",
                 level="forbidden",
                 source_quote="no big logos",
             )
@@ -153,7 +153,7 @@ def test_invented_listing_facts_are_not_recommendable(alteration: str):
             "evidence": {
                 "assessments": [
                     models.Assessment(
-                        key="logo", outcome="contradicted", quote="No logo"
+                        key="logo", outcome="matched", quote="No logo"
                     )
                 ]
             },
@@ -163,7 +163,7 @@ def test_invented_listing_facts_are_not_recommendable(alteration: str):
         criteria=[
             models.Criterion(
                 key="logo",
-                description="Large logo",
+                description="No large logos",
                 level="forbidden",
                 source_quote="no logo",
             )

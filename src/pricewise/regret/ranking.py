@@ -45,11 +45,11 @@ def _score(
         outcome: Outcome = outcomes.get(item.key, "unknown")
         match item.level:
             case "forbidden":
-                if outcome != "contradicted":
+                if outcome != "matched":
                     excluded = True
                     warnings.append(f"{item.description}: {outcome} (hard exclusion)")
                 else:
-                    reasons.append(f"Avoids: {item.description}")
+                    reasons.append(f"Required: {item.description}")
             case "important" | "negotiable":
                 weight = 3.0 if item.level == "important" else 1.0
                 match outcome:

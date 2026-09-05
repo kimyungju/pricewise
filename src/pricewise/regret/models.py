@@ -67,6 +67,8 @@ class Source(Contract):
 
 
 class Assessment(Contract):
+    """Matched always means the user's requirement is satisfied, at every priority."""
+
     key: str
     outcome: Outcome
     quote: str = ""
