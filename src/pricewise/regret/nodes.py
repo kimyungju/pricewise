@@ -19,6 +19,7 @@ from pricewise.regret.state import (
     ModelPorts,
     ShoppingState,
     StateUpdate,
+    conversation_messages,
     current_turn_messages,
     latest_user_text,
     task_messages,
@@ -95,12 +96,7 @@ class ShoppingNodes:
         )
         sources = collect_sources(history[:start])
         evidence = json.dumps([source.model_dump() for source in sources[-20:]])
-        conversation = [
-            message
-            for message in history[:start]
-            if isinstance(message, (HumanMessage, AIMessage))
-            and not message.additional_kwargs.get("pricewise_internal")
-        ]
+        conversation = conversation_messages(history[:start])
         reply = await self.models.researcher.ainvoke(
             [
                 SystemMessage(content=RESEARCH_PROMPT),

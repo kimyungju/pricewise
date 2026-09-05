@@ -1,5 +1,6 @@
 """Checkpointed session state and model ports for the shopping graph."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TypedDict
 
@@ -50,11 +51,17 @@ class ModelPorts:
 
 def visible_history(state: ShoppingState) -> list[AnyMessage]:
     """Keep internal tool research out of the conversational planning context."""
+    return conversation_messages(state["messages"])
+
+
+def conversation_messages(messages: Sequence[AnyMessage]) -> list[AnyMessage]:
+    """Project dialogue without tool protocol, including pre-Planner checkpoints."""
     return [
         message
-        for message in state["messages"]
+        for message in messages
         if isinstance(message, (HumanMessage, AIMessage))
         and not message.additional_kwargs.get("pricewise_internal")
+        and not (isinstance(message, AIMessage) and message.tool_calls)
     ]
 
 
