@@ -1,15 +1,23 @@
 import uuid
+import logging
+from typing import TypedDict
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from langgraph.types import Command
-from pydantic import BaseModel
-from langchain_core.messages import AIMessageChunk, HumanMessage, AIMessage, ToolMessage
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, JsonValue
+from langchain_core.messages import HumanMessage, AIMessage
 
-from pricewise.api.streaming import format_sse_event
+from pricewise.api.chat_stream import _stream_agent
 from pricewise.observability import agent_config
-from pricewise.tools.wishlist import session_id_var
+from pricewise.api.approval_state import pending_approval
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+class SessionRecord(TypedDict):
+    thread_id: str
+
 
 SSE_HEADERS = {
     "Cache-Control": "no-cache",
@@ -19,14 +27,16 @@ SSE_HEADERS = {
 
 
 class MessageRequest(BaseModel):
-    content: str
+    model_config = ConfigDict(str_strip_whitespace=True)
+    content: str = Field(min_length=1, max_length=20000)
 
 
 class ApprovalRequest(BaseModel):
-    approved: bool
+    approved: StrictBool
+    interrupt_ids: list[str] | None = None
 
 
-async def _get_session(request: Request, session_id: str) -> dict:
+async def _get_session(request: Request, session_id: str) -> SessionRecord:
     """Look up a session or raise 404."""
     sessions = request.app.state.sessions
     if session_id in sessions:
@@ -40,100 +50,14 @@ async def _get_session(request: Request, session_id: str) -> dict:
         if state and state.values and state.values.get("messages"):
             sessions[session_id] = {"thread_id": session_id}
             return sessions[session_id]
-    except Exception:
-        pass
+    except Exception as exc:  # Preserve session identity during checkpoint outages.
+        logger.error("Checkpoint lookup failed (%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=503,
+            detail="Conversation storage is temporarily unavailable. Please retry.",
+        ) from exc
 
     raise HTTPException(status_code=404, detail="Session not found")
-
-
-async def _stream_agent(agent, config, input_value, session_id: str = "default"):
-    """Shared SSE generator used by both message and approve endpoints.
-
-    Args:
-        agent: The compiled LangGraph agent.
-        config: The LangGraph runnable config with thread_id.
-        input_value: The input to pass to agent.astream (dict for new message,
-                     Command(resume=...) for approval, None for legacy resume).
-        session_id: Session ID for wishlist context.
-    """
-    token = session_id_var.set(session_id)
-    try:
-        async for mode, payload in agent.astream(
-            input_value, config=config, stream_mode=["messages", "updates"]
-        ):
-            if mode == "messages":
-                message, _metadata = payload
-                # Skip structured Receipt JSON — it arrives via "receipt" event
-                if _metadata.get("langgraph_node") == "generate_structured_response":
-                    continue
-                if _metadata.get("langgraph_node") in {"planner", "assess"}:
-                    continue
-                if isinstance(message, AIMessageChunk):
-                    if message.content and _metadata.get("langgraph_node") != "agent":
-                        yield format_sse_event("token", {"content": message.content})
-                    if message.tool_calls:
-                        for tc in message.tool_calls:
-                            yield format_sse_event("tool_call", {
-                                "name": tc["name"],
-                                "args": tc["args"],
-                            })
-            elif mode == "updates":
-                # Emit tool results when the tools node completes
-                if isinstance(payload, dict):
-                    for node_name, node_output in payload.items():
-                        if node_name == "tools" and isinstance(node_output, dict):
-                            for msg in node_output.get("messages", []):
-                                if isinstance(msg, ToolMessage):
-                                    yield format_sse_event("tool_result", {
-                                        "name": msg.name or "",
-                                        "result": msg.content[:2000] if msg.content else "",
-                                    })
-
-        # After streaming completes, inspect the state
-        state = await agent.aget_state(config)
-
-        if state.next:
-            # Agent is interrupted — either from interrupt_before or per-tool interrupt().
-            # With per-tool interrupt(), the interrupt data is in state.tasks.
-            tool_calls = []
-            interrupt_ids = []
-            for task in state.tasks:
-                if hasattr(task, "interrupts") and task.interrupts:
-                    for intr in task.interrupts:
-                        if isinstance(intr.value, dict) and "tool" in intr.value:
-                            tool_calls.append({
-                                "name": intr.value["tool"],
-                                "args": intr.value.get("args", {}),
-                            })
-                            interrupt_ids.append(intr.id)
-
-            # Fallback: read tool_calls from the last AI message
-            if not tool_calls:
-                last_msg = state.values["messages"][-1]
-                if hasattr(last_msg, "tool_calls") and last_msg.tool_calls:
-                    tool_calls = [
-                        {"name": tc["name"], "args": tc["args"]}
-                        for tc in last_msg.tool_calls
-                    ]
-
-            if tool_calls:
-                yield format_sse_event("approval_required", {
-                    "tool_calls": tool_calls,
-                    "interrupt_ids": interrupt_ids,
-                })
-        else:
-            # Check for structured Receipt
-            structured = state.values.get("structured_response")
-            if structured:
-                yield format_sse_event("receipt", structured.model_dump())
-
-        yield format_sse_event("done", {})
-
-    except Exception as exc:
-        yield format_sse_event("error", {"message": str(exc)})
-        yield format_sse_event("done", {})
-    finally:
-        session_id_var.reset(token)
 
 
 @router.post("/sessions")
@@ -159,15 +83,18 @@ async def get_messages(session_id: str, request: Request):
     messages = []
     for msg in raw_messages:
         if isinstance(msg, HumanMessage):
-            messages.append({"role": "user", "content": msg.content, "id": msg.id})
+            messages.append({"role": "user", "content": msg.text, "id": msg.id})
         elif isinstance(msg, AIMessage):
             if msg.additional_kwargs.get("pricewise_internal"):
                 continue
-            entry = {"role": "assistant", "content": msg.content or "", "id": msg.id}
+            entry: dict[str, JsonValue] = {
+                "role": "assistant",
+                "content": str(msg.text),
+                "id": msg.id,
+            }
             if msg.tool_calls:
                 entry["toolCalls"] = [
-                    {"name": tc["name"], "args": tc["args"]}
-                    for tc in msg.tool_calls
+                    {"name": tc["name"], "args": tc["args"]} for tc in msg.tool_calls
                 ]
             messages.append(entry)
 
@@ -175,8 +102,13 @@ async def get_messages(session_id: str, request: Request):
     receipt = structured.model_dump() if structured else None
 
     profile = state.values.get("profile")
-    return {"messages": messages, "receipt": receipt,
-            "regret_profile": profile.model_dump(mode="json") if profile else None}
+    pending = pending_approval(state)
+    return {
+        "messages": messages,
+        "receipt": receipt,
+        "pending_approval": pending.model_dump(exclude_none=True) if pending else None,
+        "regret_profile": profile.model_dump(mode="json") if profile else None,
+    }
 
 
 @router.post("/sessions/{session_id}/messages")
@@ -186,9 +118,16 @@ async def send_message(session_id: str, body: MessageRequest, request: Request):
     agent = request.app.state.agent
     config = agent_config(session["thread_id"], session_id=session_id)
 
+    if pending_approval(await agent.aget_state(config)):
+        raise HTTPException(
+            status_code=409,
+            detail="Please approve or decline the pending tool request first.",
+        )
+
     return StreamingResponse(
         _stream_agent(
-            agent, config,
+            agent,
+            config,
             {"messages": [("user", body.content)]},
             session_id=session_id,
         ),
@@ -206,12 +145,17 @@ async def approve_tool(session_id: str, body: ApprovalRequest, request: Request)
 
     # Build resume value. Multiple interrupts require a dict of {id: value}.
     state = await agent.aget_state(config)
-    interrupt_ids = [
-        intr.id
-        for task in state.tasks
-        if hasattr(task, "interrupts") and task.interrupts
-        for intr in task.interrupts
-    ]
+    pending = pending_approval(state)
+    if not pending:
+        raise HTTPException(
+            status_code=409, detail="There is no pending tool request to approve."
+        )
+    interrupt_ids = pending.interrupt_ids
+    if body.interrupt_ids is not None and set(body.interrupt_ids) != set(interrupt_ids):
+        raise HTTPException(
+            status_code=409,
+            detail="This approval is out of date. Refresh the conversation.",
+        )
 
     if len(interrupt_ids) > 1:
         resume_value = {iid: body.approved for iid in interrupt_ids}
@@ -220,7 +164,8 @@ async def approve_tool(session_id: str, body: ApprovalRequest, request: Request)
 
     return StreamingResponse(
         _stream_agent(
-            agent, config,
+            agent,
+            config,
             Command(resume=resume_value),
             session_id=session_id,
         ),

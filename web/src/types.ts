@@ -1,6 +1,7 @@
 export type MessageRole = "user" | "assistant";
 
 export interface ToolCall {
+  id?: string;
   name: string;
   args: Record<string, unknown>;
   result?: string;
@@ -35,6 +36,7 @@ export interface ChatMessage {
   receipt?: Receipt;
   isStreaming?: boolean;
   isApprovalRequired?: boolean;
+  interruptIds?: string[];
 }
 
 export type ChatStatus = "idle" | "streaming" | "awaiting_approval" | "error";

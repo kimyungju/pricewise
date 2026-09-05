@@ -9,6 +9,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode
 
 from pricewise.regret.models import CandidateBatch, TurnPlan
+from pricewise.regret.recovery import recover_output, require_response
 from pricewise.regret.nodes import (
     ShoppingNodes,
     after_planner,
@@ -47,11 +48,15 @@ def create_regret_agent(
 ) -> CompiledStateGraph[ShoppingState, None, StateUpdate, ShoppingState]:
     """Use typed model outputs for decisions and extraction, text only at the end."""
     models = ModelPorts(
-        planner=model.with_structured_output(TurnPlan, method="function_calling")
-        | RunnableLambda(TurnPlan.model_validate),
+        planner=recover_output(
+            model.with_structured_output(TurnPlan, method="function_calling")
+            | RunnableLambda(TurnPlan.model_validate)
+        ),
         researcher=model.bind_tools(tools),
-        extractor=model.with_structured_output(CandidateBatch, method="function_calling")
-        | RunnableLambda(CandidateBatch.model_validate),
-        responder=model,
+        extractor=recover_output(
+            model.with_structured_output(CandidateBatch, method="function_calling")
+            | RunnableLambda(CandidateBatch.model_validate)
+        ),
+        responder=recover_output(model | RunnableLambda(require_response)),
     )
     return compile_graph(models, tools, checkpointer)

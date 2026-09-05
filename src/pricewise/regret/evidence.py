@@ -46,7 +46,7 @@ def collect_sources(messages: Sequence[AnyMessage]) -> list[Source]:
 
 def price_is_grounded(candidate: Candidate, source: Source) -> bool:
     """Verify price digits and explicit currency in the same quoted source."""
-    if candidate.price is None or not candidate.price_quote:
+    if candidate.price is None or not candidate.price_quote or not candidate.currency:
         return False
     if candidate.price_quote not in source.text:
         return False

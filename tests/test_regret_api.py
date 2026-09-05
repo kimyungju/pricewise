@@ -102,5 +102,6 @@ async def test_new_session_has_no_profile_or_previous_products():
             "messages": [],
             "receipt": None,
             "regret_profile": None,
+        "pending_approval": None,
         }
         assert first not in json.dumps(response.json())

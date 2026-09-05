@@ -1,7 +1,9 @@
 import json
+from collections.abc import Mapping
+from pydantic import JsonValue
 
 
-def format_sse_event(event: str, data: dict) -> str:
+def format_sse_event(event: str, data: Mapping[str, JsonValue]) -> str:
     """Format a Server-Sent Event string.
 
     Args:

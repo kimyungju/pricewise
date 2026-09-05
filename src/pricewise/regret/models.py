@@ -71,14 +71,14 @@ class Assessment(Contract):
 
     key: str
     outcome: Outcome
-    quote: str = ""
+    quote: str | None = None
 
 
 class Candidate(Contract):
     product_name: str = Field(min_length=1)
     source_url: str = Field(pattern=r"^https?://\S+$")
     price: Decimal | None = Field(default=None, ge=0, allow_inf_nan=False)
-    currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
+    currency: str | None = Field(default="USD", pattern=r"^[A-Z]{3}$")
     price_quote: str | None = Field(
         default=None, description="Exact price and currency quote, or null if absent."
     )

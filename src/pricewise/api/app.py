@@ -9,6 +9,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from pricewise.agent import build_agent
 from pricewise.api.routes import router
+from pricewise.api.concurrency import ChatConcurrencyMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     load_dotenv()
     app = FastAPI(title="Pricewise API", lifespan=lifespan)
+    app.add_middleware(ChatConcurrencyMiddleware)
 
     allowed_origins = [
         o.strip()

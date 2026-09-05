@@ -79,6 +79,5 @@ async def test_approve_endpoint_exists(client):
         f"/chat/sessions/{session_id}/approve",
         json={"approved": True},
     )
-    # Should return SSE stream (even if agent has nothing to resume)
-    assert response.status_code == 200
-    assert "text/event-stream" in response.headers["content-type"]
+    # An approval cannot resume a session without a pending interrupt.
+    assert response.status_code == 409

@@ -59,6 +59,8 @@ source_url must exactly match that source. price_quote must be an exact quote
 with the product's price AND explicit currency (USD, US$, SGD, S$, EUR, etc.).
 If no such quote exists, return price=null and price_quote=null. Never invent
 an evidence string to fill a missing quote.
+Unknown currency is null. An assessment with no supporting quote must use
+outcome=unknown and quote=null. Use [] for empty collections, never null.
 A bare $ has ambiguous currency; use price=null instead of guessing. Do not
 confuse discounts, installments, accessory prices, or crossed-out prices with
 the current full product price. Missing data stays null/unknown. No sources

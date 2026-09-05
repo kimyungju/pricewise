@@ -4,31 +4,31 @@ from pydantic import BaseModel, Field
 class ProductQuery(BaseModel):
     """Input schema for the SearchProduct tool."""
     query: str = Field(description="The product search term")
-    max_results: int = Field(default=3, description="Maximum number of results to return")
+    max_results: int = Field(default=3, ge=1, description="Maximum number of results to return")
 
 
 class PriceComparisonQuery(BaseModel):
     """Input schema for the compare_prices tool."""
     product_name: str = Field(description="Name of the product to compare prices for")
-    max_sources: int = Field(default=5, description="Maximum number of price sources to return")
+    max_sources: int = Field(default=5, ge=1, description="Maximum number of price sources to return")
 
 
 class ReviewQuery(BaseModel):
     """Input schema for the get_reviews tool."""
     product_name: str = Field(description="Name of the product to get reviews for")
-    max_reviews: int = Field(default=3, description="Maximum number of review sources to return")
+    max_reviews: int = Field(default=3, ge=1, description="Maximum number of review sources to return")
 
 
 class CouponQuery(BaseModel):
     """Input schema for the find_coupons tool."""
     product_or_retailer: str = Field(description="Product name or retailer to find coupons for")
-    max_results: int = Field(default=5, description="Maximum number of coupon sources to return")
+    max_results: int = Field(default=5, ge=1, description="Maximum number of coupon sources to return")
 
 
 class AvailabilityQuery(BaseModel):
     """Input schema for the check_availability tool."""
     product_name: str = Field(description="Name of the product to check availability for")
-    max_sources: int = Field(default=5, description="Maximum number of retailer sources to check")
+    max_sources: int = Field(default=5, ge=1, description="Maximum number of retailer sources to check")
 
 
 class ProductResearchItem(BaseModel):
@@ -39,14 +39,14 @@ class ProductResearchItem(BaseModel):
 
 class DelegationQuery(BaseModel):
     """Input schema for the delegate_research tool."""
-    products: list[ProductResearchItem] = Field(description="List of products to research in parallel")
+    products: list[ProductResearchItem] = Field(min_length=1, description="List of products to research in parallel")
     total_budget: float | None = Field(default=None, description="Overall budget constraint across all products")
 
 
 class ProductSummary(BaseModel):
     """One product in a multi-product comparison."""
     product_name: str = Field(description="Name of the product")
-    price: float = Field(description="Price of the product")
+    price: float = Field(ge=0, allow_inf_nan=False, description="Price of the product")
     currency: str = Field(default="USD", description="Currency code")
     average_rating: float | None = Field(default=None, description="Average rating from reviews")
     price_range: str | None = Field(default=None, description="Price range across retailers")
@@ -62,7 +62,7 @@ class Receipt(BaseModel):
     and ``comparison_summary`` provides an overall analysis.
     """
     product_name: str = Field(description="Name of the recommended product")
-    price: float = Field(description="Price of the product")
+    price: float = Field(ge=0, allow_inf_nan=False, description="Price of the product")
     currency: str = Field(default="USD", description="Currency code")
     average_rating: float | None = Field(default=None, description="Average rating from reviews")
     price_range: str | None = Field(default=None, description="Price range across retailers, e.g. '$49 - $79'")
@@ -80,7 +80,7 @@ class Receipt(BaseModel):
 class BudgetItem(BaseModel):
     """A single item in a budget calculation."""
     name: str = Field(description="Product name")
-    price: float = Field(description="Price of the product")
+    price: float = Field(ge=0, allow_inf_nan=False, description="Price of the product")
 
 
 class BudgetQuery(BaseModel):

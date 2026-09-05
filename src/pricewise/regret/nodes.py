@@ -194,7 +194,7 @@ class ShoppingNodes:
         receipt = None
         if not question and ranking.ranked:
             best = ranking.ranked[0].candidate
-            if best.price is not None:
+            if best.price is not None and best.currency is not None:
                 comparisons = [
                     ProductSummary(
                         product_name=item.candidate.product_name,
@@ -205,6 +205,7 @@ class ShoppingNodes:
                     )
                     for item in ranking.ranked
                     if item.candidate.price is not None
+                    and item.candidate.currency is not None
                 ]
                 receipt = Receipt(
                     product_name=best.product_name,
