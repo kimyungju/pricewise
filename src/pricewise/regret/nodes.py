@@ -3,7 +3,7 @@
 import json
 from typing import Literal, assert_never
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from pricewise.regret.evidence import collect_sources
 from pricewise.regret.models import RankingResult, RegretProfile
@@ -19,6 +19,7 @@ from pricewise.regret.state import (
     ModelPorts,
     ShoppingState,
     StateUpdate,
+    current_turn_messages,
     latest_user_text,
     task_messages,
     visible_history,
@@ -152,6 +153,7 @@ class ShoppingNodes:
         )
         if question in asked:
             question = None
+        current = current_turn_messages(state)
         context = {
             "action": plan.action,
             "profile": state["profile"].model_dump(mode="json"),
@@ -160,6 +162,11 @@ class ShoppingNodes:
             "ranked": [item.model_dump(mode="json") for item in ranking.ranked],
             "exclusion_reasons": [item.warnings for item in ranking.excluded],
             "research_limit_reached": state.get("tool_rounds", 0) >= 4,
+            "tool_results": [
+                {"name": message.name, "content": message.text[:2000]}
+                for message in current
+                if isinstance(message, ToolMessage)
+            ],
         }
         history = (
             visible_history(state)[-8:]
@@ -167,13 +174,14 @@ class ShoppingNodes:
             else [HumanMessage(content=latest_user_text(state))]
         )
         if plan.action == "assist":
-            current = task_messages(state)
-            start = max(
-                index
-                for index, message in enumerate(current)
-                if isinstance(message, HumanMessage)
-            )
-            history = [*history[:-1], *current[start:]]
+            history = [
+                *history[:-1],
+                *[
+                    message
+                    for message in current
+                    if not isinstance(message, AIMessage) or message.tool_calls
+                ],
+            ]
         reply = AIMessage.model_validate(
             (
                 await self.models.responder.ainvoke(

@@ -70,3 +70,14 @@ def latest_user_text(state: ShoppingState) -> str:
 def task_messages(state: ShoppingState) -> list[AnyMessage]:
     """Limit web evidence and references to the current shopping task."""
     return state["messages"][state.get("evidence_start", 0) :]
+
+
+def current_turn_messages(state: ShoppingState) -> list[AnyMessage]:
+    """Return the latest request and its execution messages only."""
+    messages = task_messages(state)
+    start = max(
+        index
+        for index, message in enumerate(messages)
+        if isinstance(message, HumanMessage)
+    )
+    return messages[start:]
